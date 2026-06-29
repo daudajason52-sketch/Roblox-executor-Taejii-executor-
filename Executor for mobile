@@ -1,0 +1,182 @@
+-- Delta Mobile Compatibility Patch
+local oldGui = game:GetService("CoreGui"):FindFirstChild("DeltaMobileCustomConsole")
+if oldGui then oldGui:Destroy() end
+
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "DeltaMobileCustomConsole"
+screenGui.ResetOnSpawn = false
+
+-- Delta handles CoreGui injection well, falls back to PlayerGui if needed
+local success, err = pcall(function() screenGui.Parent = game:GetService("CoreGui") end)
+if not success then screenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui") end
+
+-- ==========================================
+-- 1. MOBILE TOUCH-DRAGGABLE FLOATING ICON
+-- ==========================================
+local openIcon = Instance.new("ImageButton")
+openIcon.Size = UDim2.new(0, 45, 0, 45)
+openIcon.Position = UDim2.new(0.05, 0, 0.2, 0)
+openIcon.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+openIcon.Image = "rbxassetid://6031225818" -- Smooth gear visual
+openIcon.ScaleType = Enum.ScaleType.Fit
+openIcon.Active = true
+openIcon.Parent = screenGui
+
+local iconCorner = Instance.new("UICorner")
+iconCorner.CornerRadius = UDim.new(0, 22)
+iconCorner.Parent = openIcon
+
+-- Mobile specific touch dragging function (Fixes frozen UI on Delta)
+local UserInputService = game:GetService("UserInputService")
+local dragging, dragInput, dragStart, startPos
+openIcon.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        dragging = true
+        dragStart = input.Position
+        startPos = openIcon.Position
+        input.Changed:Connect(function()
+            if input.UserInputState == Enum.UserInputState.End then dragging = false end
+        end)
+    end
+end)
+openIcon.InputChanged:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then dragInput = input end
+end)
+game:GetService("RunService").RenderStepped:Connect(function()
+    if dragging and dragInput then
+        local delta = dragInput.Position - dragStart
+        openIcon.Position = UDim2.new(startPos.X.Scale, startPos.X.Offset + delta.X, startPos.Y.Scale, startPos.Y.Offset + delta.Y)
+    end
+end)
+
+-- ==========================================
+-- 2. MAIN CONSOLE FRAME (RESIZED FOR MOBILE)
+-- ==========================================
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 460, 0, 220)
+mainFrame.Position = UDim2.new(0.5, -230, 0.5, -110)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false -- Starts minimized
+mainFrame.Active = true
+mainFrame.Parent = screenGui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 8)
+frameCorner.Parent = mainFrame
+
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 30)
+title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+title.Text = "   Delta Mini-Console"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 14
+title.Parent = mainFrame
+
+-- ==========================================
+-- 3. CUSTOM CODE BOX (LEFT)
+-- ==========================================
+local scriptInput = Instance.new("TextBox")
+scriptInput.Name = "ScriptInput"
+scriptInput.Size = UDim2.new(0, 280, 1, -85)
+scriptInput.Position = UDim2.new(0, 10, 0, 40)
+scriptInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+scriptInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+scriptInput.Text = "-- Write custom Lua here..."
+scriptInput.ClearTextOnFocus = false
+scriptInput.MultiLine = true
+scriptInput.TextParam = true
+scriptInput.TextXAlignment = Enum.TextXAlignment.Left
+scriptInput.TextYAlignment = Enum.TextYAlignment.Top
+scriptInput.Font = Enum.Font.Code
+scriptInput.TextSize = 12
+scriptInput.Parent = mainFrame
+
+local executeButton = Instance.new("TextButton")
+executeButton.Size = UDim2.new(0, 280, 0, 30)
+executeButton.Position = UDim2.new(0, 10, 1, -40)
+executeButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+executeButton.Text = "Execute Written Code"
+executeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+executeButton.Font = Enum.Font.SourceSansBold
+executeButton.TextSize = 14
+executeButton.Parent = mainFrame
+
+-- Global execution framework for Delta environment
+local function runCode(codeString)
+    if codeString and codeString ~= "" then
+        local success, err = pcall(function()
+            -- Force check for delta/exploit level loadstring variables
+            local exec = (getgenv and getgenv().loadstring) or loadstring
+            task.spawn(assert(exec(codeString)))
+        end)
+        if not success then warn("Delta Console Error: " .. tostring(err)) end
+    end
+end
+
+executeButton.MouseButton1Click:Connect(function() runCode(scriptInput.Text) end)
+openIcon.MouseButton1Click:Connect(function() mainFrame.Visible = not mainFrame.Visible end)
+
+-- ==========================================
+-- 4. SCROLLABLE PRESET MENU (RIGHT)
+-- ==========================================
+local listScroll = Instance.new("ScrollingFrame")
+listScroll.Size = UDim2.new(0, 150, 1, -40)
+listScroll.Position = UDim2.new(1, -160, 0, 40)
+listScroll.BackgroundColor3 = Color3.fromRGB(18, 18, 18)
+listScroll.BorderSizePixel = 0
+listScroll.CanvasSize = UDim2.new(0, 0, 0, 200)
+listScroll.ScrollBarThickness = 4
+listScroll.Parent = mainFrame
+
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 4)
+layout.Parent = listScroll
+
+local function addGamePreset(name, scriptSource)
+    local button = Instance.new("TextButton")
+    button.Size = UDim2.new(1, 0, 0, 28)
+    button.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    button.Text = name
+    button.TextColor3 = Color3.fromRGB(240, 240, 240)
+    button.Font = Enum.Font.SourceSans
+    button.TextSize = 12
+    button.Parent = listScroll
+    
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 4)
+    c.Parent = button
+    
+    button.MouseButton1Click:Connect(function() runCode(scriptSource) end)
+end
+
+-- Preset 1: Mobile Speed Fix
+addGamePreset("🏃 Boost Speed", [[
+    local char = game.Players.LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then char.Humanoid.WalkSpeed = 55 end
+]])
+
+-- Preset 2: Jump Enhancement
+addGamePreset("🦘 High Jump", [[
+    local char = game.Players.LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then 
+        char.Humanoid.JumpPower = 110 
+        char.Humanoid.UseJumpPower = true
+    end
+]])
+
+-- Preset 3: Inf Max Camera Zoom Out
+addGamePreset("🎥 Infinite Zoom", [[
+    game.Players.LocalPlayer.CameraMaxZoomDistance = 1000
+]])
+
+-- Preset 4: Anti-Lag / Clear Textures
+addGamePreset("⚡ Reduce Mobile Lag", [[
+    for _, v in pairs(game.Workspace:GetDescendants()) do
+        if v:IsA("BasePart") and not v:IsA("MeshPart") then
+            v.Material = Enum.Material.SmoothPlastic
+        end
+    end
+]])
