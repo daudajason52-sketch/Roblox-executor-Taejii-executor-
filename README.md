@@ -1,1 +1,7 @@
-please do not abuse this or else it may lead to a lifetime ban from the owner of roblox aka david basucki
+## 🚀 How To Run Taejii Executor
+
+Paste this code into your executor to run the console:
+
+```lua
+loadstring(game:HttpGet("https://githubusercontent.com"))()
+```
