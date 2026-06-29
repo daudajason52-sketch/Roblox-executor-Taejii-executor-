@@ -1,17 +1,12 @@
 local Players = game:GetService("Players")
 
--- SECURITY: Add authorized Roblox User IDs here so random players cannot use it
-local ALLOWED_USERS = {
-	[12345678] = true -- CHANGE THIS to your actual Roblox User ID
-}
-
--- Function to build the visual interface automatically for an authorized admin
+-- Function to build the visual interface automatically for any player
 local function createExecutorUI(player)
 	local playerGui = player:WaitForChild("PlayerGui")
 	
 	-- Main Screen Container
 	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "AdminExecutorGui"
+	screenGui.Name = "PublicExecutorGui"
 	screenGui.ResetOnSpawn = false
 	screenGui.Parent = playerGui
 	
@@ -22,22 +17,23 @@ local function createExecutorUI(player)
 	frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
 	frame.BorderSizePixel = 0
 	frame.Active = true
-	frame.Draggable = true -- Allows you to move the window around the screen
+	frame.Draggable = true -- Allows players to drag the window around
 	frame.Parent = screenGui
 	
 	-- Title Bar
 	local title = Instance.new("TextLabel")
 	title.Size = UDim2.new(1, 0, 0, 30)
 	title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	title.Text = "  Server Script Executor"
+	title.Text = "  Public Script Executor"
 	title.TextColor3 = Color3.fromRGB(255, 255, 255)
 	title.TextXAlignment = Enum.TextXAlignment.Left
 	title.Font = Enum.Font.SourceSansBold
 	title.TextSize = 16
 	title.Parent = frame
 	
-	-- Code Input Box (Where you type your scripts)
+	-- Code Input Box
 	local scriptInput = Instance.new("TextBox")
+	scriptInput.Name = "ScriptInput"
 	scriptInput.Size = UDim2.new(1, -20, 1, -85)
 	scriptInput.Position = UDim2.new(0, 10, 0, 40)
 	scriptInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
@@ -55,24 +51,24 @@ local function createExecutorUI(player)
 	local executeButton = Instance.new("TextButton")
 	executeButton.Size = UDim2.new(1, -20, 0, 35)
 	executeButton.Position = UDim2.new(0, 10, 1, -45)
-	executeButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+	executeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 70) -- Green color for public use
 	executeButton.Text = "Execute Script"
 	executeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
 	executeButton.Font = Enum.Font.SourceSansBold
 	executeButton.TextSize = 16
 	executeButton.Parent = frame
 	
-	-- LocalScript inside the button to send code back to the server securely
+	-- LocalScript inside the button to pass the text data
 	local clientScript = Instance.new("LocalScript")
 	clientScript.Name = "ExecutionHandler"
 	clientScript.Parent = executeButton
 	
-	-- We dynamically bind a RemoteEvent inside the script to pass data safely
+	-- RemoteEvent created inside the handler
 	local remoteEvent = Instance.new("RemoteEvent")
 	remoteEvent.Name = "RunCodeEvent"
 	remoteEvent.Parent = clientScript
 	
-	-- Client-side button click logic
+	-- Client button click action
 	clientScript.Source = [[
 		local button = script.Parent
 		local textbox = button.Parent:WaitForChild("ScriptInput")
@@ -85,37 +81,32 @@ local function createExecutorUI(player)
 		end)
 	]]
 	
-	-- Server-side execution logic for this specific player's UI
+	-- Server-side execution receiver
 	remoteEvent.OnServerEvent:Connect(function(firingPlayer, codeToExecute)
-		-- Extra safety check: confirm the firing player is the authorized owner
-		if firingPlayer ~= player or not ALLOWED_USERS[firingPlayer.UserId] then 
-			warn("Unauthorized execution attempt rejected.")
+		-- Extra safety check: confirm the sender matches the assigned interface
+		if firingPlayer ~= player then 
 			return 
 		end
 		
-		print("Executing script from " .. firingPlayer.Name .. "...")
+		print("[EXECUTE] Running script submitted by: " .. firingPlayer.Name)
 		
-		-- Load and run the script safely
+		-- Run the string directly on the server
 		local success, compiledFunc = pcall(loadstring, codeToExecute)
 		if success and compiledFunc then
 			local runSuccess, runError = pcall(compiledFunc)
 			if not runSuccess then
-				warn("Execution Error: " .. tostring(runError))
+				warn("Execution Error from " .. firingPlayer.Name .. ": " .. tostring(runError))
 			end
 		else
-			warn("Syntax Error: " .. tostring(compiledFunc))
+			warn("Syntax Error from " .. firingPlayer.Name .. ": " .. tostring(compiledFunc))
 		end
 	end)
 end
 
--- Give the UI to authorized users when they load into the game
+-- Distribute the executor interface to EVERY player that enters the game
 Players.PlayerAdded:Connect(function(player)
-	if ALLOWED_USERS[player.UserId] then
-		player.CharacterAdded:Connect(function()
-			-- Small delay ensures PlayerGui is completely ready
-			task.wait(1) 
-			createExecutorUI(player)
-		end)
-	end
+	player.CharacterAdded:Connect(function()
+		task.wait(1) -- Short delay to confirm PlayerGui is initialized
+		createExecutorUI(player)
+	end)
 end)
-
