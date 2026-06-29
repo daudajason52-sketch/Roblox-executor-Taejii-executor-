@@ -1,112 +1,197 @@
-local Players = game:GetService("Players")
+-- Destroy previous instances to prevent overlapping UIs
+local oldGui = game:GetService("CoreGui"):FindFirstChild("UniversalMobileExecutor")
+if oldGui then oldGui:Destroy() end
 
--- Function to build the visual interface automatically for any player
-local function createExecutorUI(player)
-	local playerGui = player:WaitForChild("PlayerGui")
-	
-	-- Main Screen Container
-	local screenGui = Instance.new("ScreenGui")
-	screenGui.Name = "PublicExecutorGui"
-	screenGui.ResetOnSpawn = false
-	screenGui.Parent = playerGui
-	
-	-- Background Panel
-	local frame = Instance.new("Frame")
-	frame.Size = UDim2.new(0, 350, 0, 220)
-	frame.Position = UDim2.new(0.5, -175, 0.4, -110)
-	frame.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
-	frame.BorderSizePixel = 0
-	frame.Active = true
-	frame.Draggable = true -- Allows players to drag the window around
-	frame.Parent = screenGui
-	
-	-- Title Bar
-	local title = Instance.new("TextLabel")
-	title.Size = UDim2.new(1, 0, 0, 30)
-	title.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
-	title.Text = "  Public Script Executor"
-	title.TextColor3 = Color3.fromRGB(255, 255, 255)
-	title.TextXAlignment = Enum.TextXAlignment.Left
-	title.Font = Enum.Font.SourceSansBold
-	title.TextSize = 16
-	title.Parent = frame
-	
-	-- Code Input Box
-	local scriptInput = Instance.new("TextBox")
-	scriptInput.Name = "ScriptInput"
-	scriptInput.Size = UDim2.new(1, -20, 1, -85)
-	scriptInput.Position = UDim2.new(0, 10, 0, 40)
-	scriptInput.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
-	scriptInput.TextColor3 = Color3.fromRGB(255, 255, 255)
-	scriptInput.Text = "-- Type your Lua code here\nprint('Hello World!')"
-	scriptInput.ClearTextOnFocus = false
-	scriptInput.MultiLine = true
-	scriptInput.TextXAlignment = Enum.TextXAlignment.Left
-	scriptInput.TextYAlignment = Enum.TextYAlignment.Top
-	scriptInput.Font = Enum.Font.Code
-	scriptInput.TextSize = 14
-	scriptInput.Parent = frame
-	
-	-- Execute Button
-	local executeButton = Instance.new("TextButton")
-	executeButton.Size = UDim2.new(1, -20, 0, 35)
-	executeButton.Position = UDim2.new(0, 10, 1, -45)
-	executeButton.BackgroundColor3 = Color3.fromRGB(0, 150, 70) -- Green color for public use
-	executeButton.Text = "Execute Script"
-	executeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
-	executeButton.Font = Enum.Font.SourceSansBold
-	executeButton.TextSize = 16
-	executeButton.Parent = frame
-	
-	-- LocalScript inside the button to pass the text data
-	local clientScript = Instance.new("LocalScript")
-	clientScript.Name = "ExecutionHandler"
-	clientScript.Parent = executeButton
-	
-	-- RemoteEvent created inside the handler
-	local remoteEvent = Instance.new("RemoteEvent")
-	remoteEvent.Name = "RunCodeEvent"
-	remoteEvent.Parent = clientScript
-	
-	-- Client button click action
-	clientScript.Source = [[
-		local button = script.Parent
-		local textbox = button.Parent:WaitForChild("ScriptInput")
-		local event = script:WaitForChild("RunCodeEvent")
-		
-		button.MouseButton1Click:Connect(function()
-			if textbox.Text ~= "" then
-				event:FireServer(textbox.Text)
-			end
-		end)
-	]]
-	
-	-- Server-side execution receiver
-	remoteEvent.OnServerEvent:Connect(function(firingPlayer, codeToExecute)
-		-- Extra safety check: confirm the sender matches the assigned interface
-		if firingPlayer ~= player then 
-			return 
-		end
-		
-		print("[EXECUTE] Running script submitted by: " .. firingPlayer.Name)
-		
-		-- Run the string directly on the server
-		local success, compiledFunc = pcall(loadstring, codeToExecute)
-		if success and compiledFunc then
-			local runSuccess, runError = pcall(compiledFunc)
-			if not runSuccess then
-				warn("Execution Error from " .. firingPlayer.Name .. ": " .. tostring(runError))
-			end
-		else
-			warn("Syntax Error from " .. firingPlayer.Name .. ": " .. tostring(compiledFunc))
-		end
-	end)
+-- Main UI Container
+local screenGui = Instance.new("ScreenGui")
+screenGui.Name = "UniversalMobileExecutor"
+screenGui.ResetOnSpawn = false
+
+local success, err = pcall(function()
+    screenGui.Parent = game:GetService("CoreGui")
+end)
+if not success then
+    screenGui.Parent = game:GetService("Players").LocalPlayer:WaitForChild("PlayerGui")
 end
 
--- Distribute the executor interface to EVERY player that enters the game
-Players.PlayerAdded:Connect(function(player)
-	player.CharacterAdded:Connect(function()
-		task.wait(1) -- Short delay to confirm PlayerGui is initialized
-		createExecutorUI(player)
-	end)
+-- ==========================================
+-- 1. DRAGGABLE OPEN/CLOSE ICON
+-- ==========================================
+local openIcon = Instance.new("ImageButton")
+openIcon.Size = UDim2.new(0, 50, 0, 50)
+openIcon.Position = UDim2.new(0.05, 0, 0.2, 0)
+openIcon.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+openIcon.Image = "rbxassetid://6031225818" -- Default gear icon asset
+openIcon.ScaleType = Enum.ScaleType.Fit
+openIcon.Active = true
+openIcon.Draggable = true -- Allows moving the button anywhere on your screen
+openIcon.Parent = screenGui
+
+local iconCorner = Instance.new("UICorner")
+iconCorner.CornerRadius = UDim.new(0, 25) -- Perfect circle
+iconCorner.Parent = openIcon
+
+-- ==========================================
+-- 2. MAIN PANEL WINDOW
+-- ==========================================
+local mainFrame = Instance.new("Frame")
+mainFrame.Size = UDim2.new(0, 500, 0, 260)
+mainFrame.Position = UDim2.new(0.5, -250, 0.4, -130)
+mainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+mainFrame.BorderSizePixel = 0
+mainFrame.Visible = false -- Starts hidden until icon is pressed
+mainFrame.Active = true
+mainFrame.Draggable = true
+mainFrame.Parent = screenGui
+
+local frameCorner = Instance.new("UICorner")
+frameCorner.CornerRadius = UDim.new(0, 8)
+frameCorner.Parent = mainFrame
+
+-- Title Header Bar
+local title = Instance.new("TextLabel")
+title.Size = UDim2.new(1, 0, 0, 35)
+title.BackgroundColor3 = Color3.fromRGB(15, 15, 15)
+title.Text = "   Universal Script Console"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
+title.TextXAlignment = Enum.TextXAlignment.Left
+title.Font = Enum.Font.SourceSansBold
+title.TextSize = 16
+title.Parent = mainFrame
+
+local titleCorner = Instance.new("UICorner")
+titleCorner.CornerRadius = UDim.new(0, 8)
+titleCorner.Parent = title
+
+-- ==========================================
+-- 3. CODE EXECUTION ENVIRONMENT (LEFT SIDE)
+-- ==========================================
+local scriptInput = Instance.new("TextBox")
+scriptInput.Name = "ScriptInput"
+scriptInput.Size = UDim2.new(0, 310, 1, -95)
+scriptInput.Position = UDim2.new(0, 10, 0, 45)
+scriptInput.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+scriptInput.TextColor3 = Color3.fromRGB(255, 255, 255)
+scriptInput.Text = "-- Write custom Lua here..."
+scriptInput.ClearTextOnFocus = false
+scriptInput.MultiLine = true
+scriptInput.TextXAlignment = Enum.TextXAlignment.Left
+scriptInput.TextYAlignment = Enum.TextYAlignment.Top
+scriptInput.Font = Enum.Font.Code
+scriptInput.TextSize = 13
+scriptInput.Parent = mainFrame
+
+local inputCorner = Instance.new("UICorner")
+inputCorner.CornerRadius = UDim.new(0, 4)
+inputCorner.Parent = scriptInput
+
+local executeButton = Instance.new("TextButton")
+executeButton.Size = UDim2.new(0, 310, 0, 35)
+executeButton.Position = UDim2.new(0, 10, 1, -45)
+executeButton.BackgroundColor3 = Color3.fromRGB(0, 120, 215)
+executeButton.Text = "Execute Custom Code"
+executeButton.TextColor3 = Color3.fromRGB(255, 255, 255)
+executeButton.Font = Enum.Font.SourceSansBold
+executeButton.TextSize = 14
+executeButton.Parent = mainFrame
+
+local buttonCorner = Instance.new("UICorner")
+buttonCorner.CornerRadius = UDim.new(0, 6)
+buttonCorner.Parent = executeButton
+
+-- Helper function to evaluate code string blocks
+local function runLuaString(code)
+    if code and code ~= "" then
+        local success, err = pcall(function()
+            local compiled = assert(loadstring(code))
+            task.spawn(compiled)
+        end)
+        if not success then warn("Execution Error: " .. tostring(err)) end
+    end
+end
+
+executeButton.MouseButton1Click:Connect(function()
+    runLuaString(scriptInput.Text)
 end)
+
+-- Toggle menu view logic when tapping the floating icon
+openIcon.MouseButton1Click:Connect(function()
+    mainFrame.Visible = not mainFrame.Visible
+end)
+
+-- ==========================================
+-- 4. BUILT-IN SCRIPT MENU (RIGHT SIDE)
+-- ==========================================
+local rightPanel = Instance.new("ScrollingFrame")
+rightPanel.Size = UDim2.new(0, 160, 1, -45)
+rightPanel.Position = UDim2.new(1, -170, 0, 45)
+rightPanel.BackgroundColor3 = Color3.fromRGB(20, 20, 20)
+rightPanel.BorderSizePixel = 0
+rightPanel.CanvasSize = UDim2.new(0, 0, 0, 300) -- Scrollable area for lists
+local layout = Instance.new("UIListLayout")
+layout.Padding = UDim.new(0, 5)
+layout.Parent = rightPanel
+rightPanel.Parent = mainFrame
+
+-- Helper template to generate quick command buttons
+local function createPresetButton(labelText, embeddedCode)
+    local btn = Instance.new("TextButton")
+    btn.Size = UDim2.new(1, 0, 0, 30)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.Text = labelText
+    btn.TextColor3 = Color3.fromRGB(230, 230, 230)
+    btn.Font = Enum.Font.SourceSans
+    btn.TextSize = 13
+    btn.Parent = rightPanel
+    
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, 4)
+    c.Parent = btn
+    
+    btn.MouseButton1Click:Connect(function()
+        runLuaString(embeddedCode)
+    end)
+end
+
+-- ==========================================
+-- 5. LOAD PRESET MENU BUTTONS (FOR NON-SCRIPTERS)
+-- ==========================================
+
+-- Preset 1: Local Player WalkSpeed Booster
+createPresetButton("🏃 Speed Booster", [[
+    local player = game.Players.LocalPlayer
+    if player and player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid.WalkSpeed = 60
+    end
+]])
+
+-- Preset 2: Local Player JumpPower Booster
+createPresetButton("🦘 High Jump", [[
+    local player = game.Players.LocalPlayer
+    if player and player.Character and player.Character:FindFirstChild("Humanoid") then
+        player.Character.Humanoid.JumpPower = 100
+        player.Character.Humanoid.UseJumpPower = true
+    end
+]])
+
+-- Preset 3: Continuous In-Game Day Cycles
+createPresetButton("☀️ Force Day Time", [[
+    game:GetService("Lighting").TimeOfDay = "12:00:00"
+]])
+
+-- Preset 4: Highlight all interactive objects in the environment
+createPresetButton("🔍 Object ESP Highlight", [[
+    for _, obj in pairs(game.Workspace:GetDescendants()) do
+        if obj:IsA("BasePart") and (obj.Name:lower():find("key") or obj.Name:lower():find("chest") or obj.Name:lower():find("coin")) then
+            local highlight = Instance.new("Highlight")
+            highlight.FillColor = Color3.fromRGB(255, 215, 0)
+            highlight.OutlineColor = Color3.fromRGB(255, 255, 255)
+            highlight.Parent = obj
+        end
+    end
+]])
+
+-- Preset 5: Fully adjust camera distance zoom maximums
+createPresetButton("🎥 Infinite Camera Zoom", [[
+    game.Players.LocalPlayer.CameraMaxZoomDistance = 500
+]])
